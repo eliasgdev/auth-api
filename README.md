@@ -82,7 +82,7 @@ JWT_SECRET=$(openssl rand -base64 48) docker compose up --build
 npm test
 ```
 
-Son 18 pruebas de integración **contra un PostgreSQL real**: cada corrida crea un esquema propio y lo borra al final. Cubren registro, login, bloqueo por fallos, `alg: none`, tokens alterados, rotación y reutilización de tokens, cierre de sesiones, que un usuario no pueda cerrar sesiones de otro, cambio de clave y que en la base no queden claves ni tokens en claro. El CI las corre en Node 22 y 24 contra Postgres 15 y 17, y además ejecuta `npm audit`.
+Son 15 pruebas de integración **contra un PostgreSQL real** (cada corrida crea un esquema propio y lo borra al final) y 3 pruebas unitarias del limitador, la configuración y la política de claves. Cubren registro, login, bloqueo por fallos, `alg: none`, tokens alterados, rotación y reutilización de tokens, cierre de sesiones, que un usuario no pueda cerrar sesiones de otro, cambio de clave y que en la base no queden claves ni tokens en claro. El CI las corre en Node 22 y 24 contra Postgres 15 y 17, y además ejecuta `npm audit`.
 
 ## Estructura
 
