@@ -1,20 +1,26 @@
 {
   "name": "auth-api",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "version": "2.0.0",
+  "description": "API de autenticación lista para producción: Express 5, PostgreSQL, JWT de corta vida y tokens de renovación rotativos con detección de reutilización.",
+  "type": "module",
+  "main": "src/servidor.js",
+  "engines": {
+    "node": ">=22"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "scripts": {
+    "start": "node src/servidor.js",
+    "dev": "node --watch --env-file=.env src/servidor.js",
+    "migrar": "node src/migrar.js",
+    "db:iniciar": "podman run -d --name auth-api-pg -e POSTGRES_USER=auth -e POSTGRES_PASSWORD=auth -e POSTGRES_DB=auth -p 55435:5432 docker.io/library/postgres:17-alpine",
+    "test": "node --test --test-concurrency=1 tests/*.test.js"
+  },
+  "license": "MIT",
   "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
-    "pg": "^8.20.0"
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
   }
 }
