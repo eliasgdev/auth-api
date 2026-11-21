@@ -1,111 +1,105 @@
-# Auth API 
+# auth-api
 
-REST API de autenticación con JWT y PostgreSQL. Registro, login y rutas protegidas.
+[![Pruebas](https://github.com/eliasgdev/auth-api/actions/workflows/pruebas.yml/badge.svg)](https://github.com/eliasgdev/auth-api/actions/workflows/pruebas.yml)
+![Node 22+](https://img.shields.io/badge/node-22%2B-339933?logo=node.js&logoColor=white)
+![Postgres 15+](https://img.shields.io/badge/postgres-15%2B-336791?logo=postgresql&logoColor=white)
 
-## Descripción
-
-Backend completo de autenticación — los usuarios se registran, hacen login y reciben un token JWT para acceder a rutas protegidas. Los passwords se guardan encriptados con bcrypt.
-
-## Tecnologías
-
-- Node.js
-- Express
-- PostgreSQL
-- JWT (jsonwebtoken)
-- bcryptjs
+API de autenticación con Express 5 y PostgreSQL, hecha para usarse en producción y no solo como ejemplo. Usa tokens de acceso de 15 minutos y **tokens de renovación que cambian en cada uso**. Si alguien roba uno y lo usa, la API lo detecta y cierra esa sesión. También permite cerrar una sesión o todas, bloquea el login tras varios fallos y no deja saber si un correo está registrado.
 
 ## Endpoints
 
-| Método | Endpoint | Descripción | Protegido |
-|--------|----------|-------------|-----------|
-| POST | `/api/auth/register` | Registrar usuario | No |
-| POST | `/api/auth/login` | Login y obtener token | No |
-| GET | `/api/auth/perfil` | Ver perfil del usuario | Sí |
+Todos van bajo `/api/auth`. Las rutas marcadas con 🔒 piden `Authorization: Bearer <acceso>`.
 
-## Ejemplos de uso
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `POST` | `/registro` | Crea la cuenta `{ nombre, email, clave }` |
+| `POST` | `/login` | `{ email, clave }` → `{ acceso, renovacion, expira_en_segundos }` |
+| `POST` | `/renovar` | `{ renovacion }` → par de tokens nuevo (el anterior deja de servir) |
+| `GET` | `/yo` 🔒 | Perfil del usuario |
+| `GET` | `/sesiones` 🔒 | Sesiones abiertas: IP, navegador, inicio y cuál es la actual |
+| `DELETE` | `/sesiones/:id` 🔒 | Cierra otra sesión, por ejemplo el celular que perdiste |
+| `PATCH` | `/clave` 🔒 | `{ actual, nueva }`; cierra todas las demás sesiones |
+| `POST` | `/salir` 🔒 | Cierra esta sesión |
+| `POST` | `/salir-de-todo` 🔒 | Cierra todas las sesiones |
+| `GET` | `/salud` | Comprueba que la API y la base respondan (fuera de `/api/auth`) |
 
-**Registro (POST)**
+Los errores siempre tienen la misma forma y dicen qué campo falló:
+
 ```json
-{
-  "nombre": "Elias",
-  "email": "elias@gmail.com",
-  "password": "123456"
-}
+{ "error": "Datos inválidos.", "campos": { "clave": "Debe tener al menos 10 caracteres." } }
 ```
 
-**Login (POST)**
-```json
-{
-  "email": "elias@gmail.com",
-  "password": "123456"
-}
-```
+Los `id` de usuario se devuelven como texto porque son `BIGINT`.
 
-**Respuesta del login**
-```json
-{
-  "mensaje": "Login exitoso",
-  "token": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
+## Decisiones de seguridad
 
-**Perfil (GET) — requiere token en Headers**
-```
-Key:    authorization
-Value:  eyJhbGciOiJIUzI1NiIs...
-```
+| Riesgo | Cómo se cubre |
+|---|---|
+| Robo de base de datos | Claves con **scrypt** (N=2¹⁵, r=8, p=3, según OWASP) y sal propia. De los tokens de renovación solo se guarda el **SHA-256**. |
+| Token de renovación robado | **Rotación con detección de reutilización**: cada `/renovar` invalida el token usado. Si un token ya usado vuelve a llegar, se revoca toda la familia de la sesión, tanto la del ladrón como la del usuario. |
+| Cerrar sesión que no cierra | En cada petición se comprueba que la sesión del token de acceso siga abierta, así que `/salir` y el cambio de clave cortan el acceso **de inmediato**, sin esperar a que venza el JWT. |
+| JWT manipulado | Algoritmo fijo `HS256` (se rechaza `alg: none`), con emisor y audiencia verificados, y secreto de al menos 32 caracteres (la API no arranca si es más corto). |
+| Fuerza bruta | 5 fallos por correo o 20 por IP en 15 minutos → `429` con `Retry-After`. Además, un límite general de peticiones por IP. |
+| Saber qué correos existen | Si el correo no existe o la clave está mal, el mensaje es el mismo y la respuesta tarda lo mismo (se verifica contra un hash falso). |
+| Claves débiles | Mínimo 10 caracteres y máximo 128. Se rechazan las claves comunes, las repetidas y las que contienen el correo o el nombre. |
+| Asignación masiva | Validación estricta con zod: los campos desconocidos (`rol`, `es_admin`…) se rechazan con `400`. |
+| Datos inválidos | Los mismos límites se aplican en la API (zod) y en la base (`CHECK`, índice único del correo en minúsculas). |
+| Abuso del servidor | Cuerpo máximo de 4 KB, cabeceras de seguridad con Helmet, CORS con lista de orígenes permitidos, `Cache-Control: no-store` y sin `x-powered-by`. |
 
-## Cómo correrlo
+**Límites conocidos:** el registro responde `409` si el correo ya existe; sin verificación por correo electrónico no hay forma de evitarlo, así que queda protegido con el límite de peticiones. El límite general por IP vive en memoria, y con varias instancias conviene moverlo a Redis o a la base.
 
-1. Cloná el repositorio
+## Correrla
+
 ```bash
-   git clone https://github.com/eliasgdev/auth-api.git
+git clone https://github.com/eliasgdev/auth-api.git && cd auth-api
+npm install
+npm run db:iniciar        # Postgres 17 en podman, puerto 55435 (o usa el tuyo)
+cp .env.example .env      # y pon un JWT_SECRET: openssl rand -base64 48
+npm run dev               # migra la base y escucha en http://localhost:3000
 ```
-2. Instalá las dependencias
+
+Con Docker:
+
 ```bash
-   npm install
+JWT_SECRET=$(openssl rand -base64 48) docker compose up --build
 ```
-3. Creá un archivo `.env` en la raíz
-```
-   PORT=3000
-   DB_USER=postgres
-   DB_PASSWORD=tu_contraseña
-   DB_HOST=localhost
-   DB_PORT=5432
-   DB_NAME=auth_app
-   JWT_SECRET=tu_clave_secreta
-```
-4. Creá la tabla en PostgreSQL
-```sql
-   CREATE TABLE usuarios (
-     id SERIAL PRIMARY KEY,
-     nombre TEXT NOT NULL,
-     email TEXT UNIQUE NOT NULL,
-     password TEXT NOT NULL,
-     fecha_registro TIMESTAMP DEFAULT NOW()
-   );
-```
-5. Corrré el servidor
+
+### Variables
+
+| Variable | Por defecto | Para qué |
+|---|---|---|
+| `DATABASE_URL` | obligatoria | Conexión a PostgreSQL |
+| `JWT_SECRET` | obligatoria | Mínimo 32 caracteres |
+| `CORS_ORIGINS` | vacío | Orígenes permitidos, separados por coma |
+| `ACCESO_MINUTOS` | `15` | Vida del token de acceso |
+| `RENOVACION_DIAS` | `30` | Vida del token de renovación |
+| `LIMITE_POR_MINUTO` | `30` | Peticiones por IP y minuto en `/api/auth` |
+| `TRUST_PROXY` | vacío | Número de proxies delante, para leer la IP real |
+
+## Pruebas
+
 ```bash
-   node app.js
-```
-6. El servidor corre en `http://localhost:3000`
-
-## Estructura del proyecto
-```
-auth-api/
-├── controllers/
-│   └── authController.js
-├── db/
-│   └── database.js
-├── middleware/
-│   └── auth.js
-├── routes/
-│   └── auth.js
-├── .env
-└── app.js
+npm test
 ```
 
-## Autor
+Son 15 pruebas de integración **contra un PostgreSQL real** (cada corrida crea un esquema propio y lo borra al final) y 3 pruebas unitarias del limitador, la configuración y la política de claves. Cubren registro, login, bloqueo por fallos, `alg: none`, tokens alterados, rotación y reutilización de tokens, cierre de sesiones, que un usuario no pueda cerrar sesiones de otro, cambio de clave y que en la base no queden claves ni tokens en claro. El CI las corre en Node 22 y 24 contra Postgres 15 y 17, y además ejecuta `npm audit`.
 
-**Elias Gutierrez** — [github.com/eliasgdev](https://github.com/eliasgdev)
+## Estructura
+
+```
+src/
+├── servidor.js     # arranque, migraciones y apagado ordenado
+├── app.js          # rutas HTTP, validación (zod) y manejo de errores
+├── servicio.js     # lógica de cuentas y sesiones
+├── tokens.js       # JWT de acceso y tokens de renovación
+├── claves.js       # scrypt y política de claves
+├── limitador.js    # límite de peticiones por IP
+├── config.js       # variables de entorno validadas al arrancar
+└── db.js           # pool y migraciones con candado
+migraciones/001_inicial.sql
+tests/
+```
+
+## Licencia
+
+MIT
